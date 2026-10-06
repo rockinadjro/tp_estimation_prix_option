@@ -1,0 +1,152 @@
+---
+title: "TP 2 Monte Carlo"
+author: "Rock INADJRO"
+date: "2026-05-14"
+output: pdf_document
+---
+
+```{r}
+#paramètres
+S_0 <- 100
+K <- 110
+r <- 0.05
+sigma <- 0.2
+T <- 1
+N <- 10000
+B <- 1000
+burn_in <- 1000
+
+#fonction h
+
+h <- function(Z) {
+  S_T <- S_0 * exp((r - sigma^2/2) * T + sigma * sqrt(T) * Z)
+  return(pmax(K - S_T, 0))
+}
+```
+
+##Partie A: Estimation du prix d'une option put par Monte Carlo standard
+
+1.Calcul de la valeur P sous R
+
+```{r}
+d1 <- (log(S_0/K) + (r + 0.5*sigma^2)*T)/(sigma*sqrt(T))
+d2 <- d1 - sigma*sqrt(T)
+
+# Calcul du put
+
+put <- K*exp(-r*T)*pnorm(-d2) - S_0*pnorm(-d1)
+
+put
+```
+
+
+
+2. Estimation de Monte Carlo
+
+```{r}
+set.seed(123)
+
+Z <- rnorm(N)
+#maxi <- pmax(0,K-S_0*exp((r-sigma^2/2)*T+sigma*sqrt(T)*Z))
+p_esti <- exp(-r*T)*mean(h(Z))
+
+p_esti
+
+
+```
+Erreur standard de l'estimateur
+```{r}
+sd <- sd(exp(-r*T)*h(Z))
+sd
+```
+5. Intervalle de confiance asymptotique à 95%
+
+```{r}
+Z <- rnorm(N)
+p_esti <- exp(-r*T)*mean(h(Z))
+#p_esti
+
+p_boos <- sapply(1:B, function(b){
+  s <- sample(Z,N,replace = TRUE)
+  exp(-r*T)*mean(pmax(0,K-S_0*exp((r-sigma^2/2)*T+sigma*sqrt(T)*s)))
+})
+p_min = p_esti -1.96*sqrt(var(p_boos))
+p_max = p_esti +1.96*sqrt(var(p_boos))
+
+cat("Le P estimée: ",p_esti, "\n\n")
+cat("La moyenne des p boostrapées: ",mean(p_boos), "\n\n")
+cat("L'estimation de la variance de P estimée par bosstrap: ",var(p_boos), "\n\n")
+cat("La bonne inférieure de l'intervalle de confiance de P estimée: ",p_min, "\n\n")
+cat("La bonne supérieure de l'intervalle de confiance de P estimée: ",p_max, "\n\n")
+
+
+```
+
+# Partie B: Estimation du prix d'une option put var les variables antithétiques
+
+```{r}
+# 2a : Estimateur antithétique
+Z <- rnorm(N)
+h1 <- h(Z)
+h2 <- h(-Z)
+y <- (h1 + h2)/2
+P_av <- exp(-r * T) * mean(y)
+
+# 2b : Erreur standard
+SE_av <- exp(-r * T) * sqrt(var(y)/N)
+
+# 2c : Intervalle de confiance 95%
+IC_av <- P_av + c(-1.96, 1.96) * SE_av
+
+# Affichage des résultats
+cat("Estimateur antithétique :", P_av, "\n")
+cat("Erreur standard :", SE_av, "\n")
+cat("Intervalle de confiance 95% : [", IC_av[1], ",", IC_av[2], "]\n")
+```
+
+Partie C: Approche MCMC
+
+```{r}
+
+tau_opt <- 1  # après plusieurs essais
+
+# Algorithme MH
+set.seed(123)
+N <- 10000
+burn_in <- 1000
+tau <- tau_opt
+
+Z_chain <- numeric(N + burn_in)
+Z_chain[1] <- 0
+accept <- 0
+
+k <- 1
+while(k < (N + burn_in)) {
+  Z_prop <- Z_chain[k] + rnorm(1, 0, tau)
+  
+  pi_cur <- h(Z_chain[k]) * dnorm(Z_chain[k])
+  pi_prop <- h(Z_prop) * dnorm(Z_prop)
+  
+  alpha <- ifelse(pi_cur == 0, 1, min(1, pi_prop / pi_cur))
+  
+  if (runif(1) < alpha) {
+    Z_chain[k+1] <- Z_prop
+    accept <- accept + 1
+  } else {
+    Z_chain[k+1] <- Z_chain[k]
+  }
+  k <- k + 1
+}
+
+# Suppression du burn-in
+Z_final <- Z_chain[(burn_in+1):(N+burn_in)]
+
+# Estimateur de P
+P_MH <- exp(-r * T) * mean(sapply(Z_final, h))
+
+# Affichage
+cat("Estimateur P_MH :", P_MH, "\n")
+cat("Taux d'acceptation :", accept/(N+burn_in), "\n")
+```
+
+
